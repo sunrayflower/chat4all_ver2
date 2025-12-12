@@ -9,7 +9,7 @@ db = client["chat4all_v2"]
 # Usando uma coleção que armazena todos os canais de um usuário
 mapping = db["user_channel_map"] # <-- RECOMENDADO USAR ESSE NOME DE COLEÇÃO
 
-print("🔄 Limpando collection user_channel_map...")
+print("Limpando collection user_channel_map...")
 mapping.delete_many({})
 
 print("📌 Inserindo mapeamentos de teste...")
@@ -20,7 +20,8 @@ user_mappings = [
         "name": "Giovanna",
         "mappings": [
             {"canal": "whatsapp", "id_externo": "+551199999999"},
-            {"canal": "instagram", "id_externo": "giovanna_ig"}
+            {"canal": "instagram", "id_externo": "giovanna_ig"},
+            {"canal": "telegram", "id_externo": "1628432250", "username": "@nannafmgn"}
         ]
     },
     {

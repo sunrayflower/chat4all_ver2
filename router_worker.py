@@ -23,6 +23,7 @@ MONGO_USER_MAP_COLLECTION = "user_channel_map"  # <-- coleção usada para canal
 CHANNEL_TOPIC_MAP = {
     "whatsapp": "whatsapp_channel",
     "instagram": "instagram_channel",
+    "telegram": "telegram_channel"
 }
 
 # Kafka Producer
