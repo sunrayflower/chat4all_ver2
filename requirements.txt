@@ -1,0 +1,9 @@
+grpcio
+grpcio-tools
+python-jose
+kafka-python
+pymongo
+protobuf
+boto3
+prometheus-client
+locust

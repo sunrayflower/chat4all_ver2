@@ -1,0 +1,291 @@
+openapi: 3.0.0
+info:
+  title: Chat4All Messaging API
+  version: v2.0.0
+  description: |
+    API de mensageria assíncrona baseada em gRPC, Kafka e MinIO (Object Storage).
+    
+    **Arquitetura:**
+    - **Servidor gRPC:** Porta 50051 (Gateway HTTP/gRPC).
+    - **Mensageria Assíncrona:** Kafka (Tópicos 'messages' e 'notifications').
+    - **Persistência:** MongoDB.
+    - **Armazenamento de Arquivos:** MinIO/S3.
+
+servers:
+  - url: http://localhost:50051
+    description: Servidor Principal do gRPC Gateway/API
+
+# =======================================================
+# 1. AUTORIZAÇÃO E SEGURANÇA
+# =======================================================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT obtido via POST /auth/token
+  
+# =======================================================
+# 2. DEFINIÇÕES DE ESQUEMAS (Schemas / Modelos de Dados)
+# =======================================================
+  schemas:
+    # --- Autenticação ---
+    TokenRequest:
+      type: object
+      required: [client_id, client_secret]
+      properties:
+        client_id: {type: string, description: ID único do cliente.}
+        client_secret: {type: string, description: Segredo para gerar o token.}
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token: {type: string}
+        expires_in: {type: integer, description: Duração do token em segundos.}
+
+    # --- Conversas e Mensagens ---
+    MessageStatus:
+      type: integer
+      description: Ciclo de vida da mensagem (Baseado no ENUM Protobuf).
+      enum: [1, 2, 3, 4, 5, 6]
+      x-enum-names: [SENT, DELIVERED, SENT_TO_EXTERNAL, RECEIVED, READ, FAILED]
+
+    FileMetadata:
+      type: object
+      description: Referência a um arquivo anexado (metadados ricos estão na coleção file_metadata).
+      properties:
+        file_id: {type: string, format: uuid, description: ID único do arquivo no MinIO/DB.}
+        # Campos ricos (filename, size, etc.) seriam adicionados aqui para referência.
+
+    MessagePayload:
+      type: object
+      description: Conteúdo da mensagem.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [text, file]
+          description: Tipo do conteúdo da mensagem.
+        text:
+          type: string
+          nullable: true
+          description: O corpo do texto (usado se type=text).
+
+    SendMessageRequest:
+      type: object
+      required: [message_id, conversation_id, from_user, payload, channels]
+      properties:
+        message_id: {type: string, format: uuid}
+        conversation_id: {type: string, format: uuid}
+        from_user: {type: string}
+        to: {type: array, items: {type: string}, description: Destinatários.}
+        channels:
+          type: array
+          items: {type: string}
+          description: Canais de destino (e.g., whatsapp, instagram).
+        payload:
+          $ref: '#/components/schemas/MessagePayload'
+        file_attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileMetadata'
+          description: Referências a arquivos anexados (usado se payload.type=file).
+          nullable: true
+
+SendMessageResponse: # 4 espaços (sob 'schemas:')
+      type: object        # 6 espaços
+      properties:         # 6 espaços (MESMO NÍVEL DE 'type')
+        status: {type: string, enum: [accepted], description: Indica que a mensagem foi aceita pelo Kafka.} # 8 espaços
+        message_id: {type: string, format: uuid}
+    # --- Arquivos/Upload ---
+    GetUploadUrlRequest:
+      type: object
+      required: [filename, conversation_id, file_size, num_parts]
+      properties:
+        filename: {type: string}
+        conversation_id: {type: string}
+        file_size: {type: integer, format: int64}
+        num_parts: {type: integer, format: int32, description: Número de partes para upload multipart.}
+
+    GetUploadUrlResponse: 
+      type: object
+      properties:
+        file_id: {type: string, format: uuid}
+        upload_session_id: {type: string, description: ID para o CompleteUpload.}
+        parts:
+          type: array
+          items:
+            type: object
+            properties:
+              part_number: {type: integer}
+              presigned_url: {type: string, format: url}
+
+    CompleteUploadRequest: 
+      type: object
+      required: [file_id, upload_session_id, completed_parts, checksum_sha256]
+      properties:
+        file_id: {type: string, format: uuid}
+        upload_session_id: {type: string}
+        completed_parts:
+          type: array
+          items:
+            type: object
+            properties:
+              part_etag: {type: string, description: ETag retornado pelo S3/MinIO.}
+              part_number: {type: integer}
+        checksum_sha256: {type: string, description: Checksum final para validação.}
+
+    # --- Callbacks/Notificações ---
+    NotificationRequest:
+      type: object
+      description: Simula o webhook de status recebido de uma plataforma externa.
+      required: [message_id, status, channel]
+      properties:
+        message_id: {type: string, format: uuid}
+        status:
+          $ref: '#/components/schemas/MessageStatus'
+          description: O novo status (RECEIVED, READ, FAILED).
+        channel: {type: string}
+        remote_id: {type: string, description: ID da mensagem na plataforma externa.}
+        
+    NotificationResponse:
+      type: object
+      properties:
+        success: {type: boolean}
+        message: {type: string}
+
+# =======================================================
+# 3. ENDPOINTS (Paths)
+# =======================================================
+paths:
+  # 6.1 Autenticação
+  /auth/token:
+    post:
+      tags: [Autenticação]
+      summary: Obtém um token JWT para acessar a API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Token JWT retornado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+
+  # 6.3 Enviar Mensagem (Inclui Suporte a Anexos)
+  /v1/messages:
+    post:
+      tags: [Mensageria]
+      summary: Envia uma mensagem de texto ou um anexo (referenciando o file_id).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '202':
+          description: Mensagem aceita e publicada no Kafka.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendMessageResponse'
+
+  # 6.4 Upload de Arquivo - 1/3 (Inicia o Upload Resumível)
+  /v1/files/initiate:
+    post:
+      tags: [Arquivos]
+      summary: Inicia o processo de upload multipart e retorna URLs pré-assinadas.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetUploadUrlRequest'
+      responses:
+        '200':
+          description: URLs pré-assinadas para upload das partes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetUploadUrlResponse'
+
+  # 6.4 Upload de Arquivo - 2/3 (Finaliza o Upload)
+  /v1/files/complete:
+    post:
+      tags: [Arquivos]
+      summary: Finaliza o upload multipart no MinIO/S3 e persiste os metadados.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteUploadRequest'
+      responses:
+        '200':
+          description: Upload finalizado e metadados persistidos.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_id: {type: string}
+                  success: {type: boolean}
+                  message: {type: string}
+                  file_metadata: {$ref: '#/components/schemas/FileMetadata'}
+
+  # 6.4 Upload de Arquivo - 3/3 (Download)
+  /v1/files/{file_id}/download:
+    get:
+      tags: [Arquivos]
+      summary: Obtém uma URL temporária (pré-assinada) para download de um arquivo.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: file_id
+          schema: {type: string, format: uuid}
+          required: true
+      responses:
+        '200':
+          description: Retorna a URL temporária para acesso direto ao MinIO/S3.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  presigned_url: {type: string, format: url}
+                  filename: {type: string}
+                  mime_type: {type: string}
+
+  # 6.5 Delivery / Read callbacks (Webhook)
+  /v1/notifications:
+    post:
+      tags: [Callbacks]
+      summary: Endpoint do servidor para receber webhooks de status de entrega/leitura.
+      description: Este endpoint é chamado pelas APIs externas (mocks) após a entrega ou leitura.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRequest'
+      responses:
+        '202':
+          description: Notificação aceita e publicada no tópico 'notifications'.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'

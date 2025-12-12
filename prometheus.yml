@@ -1,0 +1,25 @@
+# prometheus.yml
+global:
+  scrape_interval: 15s # Intervalo de coleta de 15 segundos
+
+scrape_configs:
+  # Job para coletar métricas do próprio Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Job para coletar métricas dos Workers Python
+  - job_name: 'chat4all_workers'
+    # Usamos o 'host.docker.internal' (ou o IP do host) porque os Workers 
+    # Python estão rodando *diretamente na sua máquina* e não dentro de containers Docker.
+    # Se estivessem em containers, usaríamos o nome do serviço.
+    static_configs:
+      - targets:
+          # Worker Persister/Updater
+          - 'host.docker.internal:8000' 
+          # Router Worker
+          - 'host.docker.internal:8001' 
+          # Connector WhatsApp
+          - 'host.docker.internal:8002' 
+          # gRPC Server (Ingestão)
+          - 'host.docker.internal:8003'
