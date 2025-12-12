@@ -1,9 +1,3 @@
-# Chat4All v2 – README Oficial
-
-Plataforma distribuída para processamento de mensagens utilizando **gRPC**, **Kafka**, **workers**, **conectores externos** e **pipelines assíncronos**. Este README substitui completamente o anterior e reflete a estrutura atual do repositório.
-
----
-
 # 📌 Visão Geral
 
 O Chat4All v2 é um sistema modular construído para receber mensagens, processá-las e encaminhá-las para diferentes plataformas através de conectores desacoplados. A arquitetura combina performance (gRPC), escalabilidade (Kafka) e extensibilidade (conectores independentes).
