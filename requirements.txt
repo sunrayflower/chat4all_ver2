@@ -1,6 +1,12 @@
 grpcio
 grpcio-tools
-python-jose
 kafka-python
+
 pymongo
-protobuf
+
+boto3
+python-jose
+
+prometheus-client
+
+locust
