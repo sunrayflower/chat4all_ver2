@@ -156,6 +156,12 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
         print(f"[{client_id}] Conversa criada: {conv_id}")
         return conv
     
+    def get_next_sequence(conversation_id):
+        result = MESSAGES_COLLECTION.find_one(
+            {"conversation_id": conversation_id},
+             sort=[("seq_num", -1)]
+        )
+        return (result["seq_num"] + 1) if result else 1
 
     def SendMessage(self, request, context):
         client_id = self._auth(context)
@@ -164,6 +170,10 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
 
         start_time = time.time()
         success_label = "SUCCESS"
+
+        seq_num = get_next_sequence(request.conversation_id)
+        message_dict["seq_num"] = seq_num 
+
         try:
             # Basic validation for payload (expect 'type' and possibly 'text')
             payload_type = getattr(request.payload, "type", "text")
@@ -244,7 +254,7 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
             query["received_at"] = {"$gt": request.since_timestamp}
 
         try:
-            cursor = MESSAGES_COLLECTION.find(query).sort("received_at", 1)
+            cursor = MESSAGES_COLLECTION.find(query).sort("seq_num", 1)
         except Exception as e:
             print(f"[ListMessages] ERRO ao consultar MongoDB: {e}")
             context.abort(grpc.StatusCode.INTERNAL, "Erro ao ler do banco de dados")
