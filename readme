@@ -1,71 +1,160 @@
-# Chat4All v2: Plataforma de Comunicação Ubíqua (API gRPC/Kafka/MongoDB)
+# Chat4All v2 – README Oficial
 
-O Chat4All v2 é uma plataforma de comunicação escalável e assíncrona, projetada para rotear mensagens entre usuários em múltiplos canais. Esta documentação cobre a primeira fase de implementação, focada na arquitetura de persistência e roteamento via gRPC e Kafka.
+Plataforma distribuída para processamento de mensagens utilizando **gRPC**, **Kafka**, **workers**, **conectores externos** e **pipelines assíncronos**. Este README substitui completamente o anterior e reflete a estrutura atual do repositório.
 
-## Arquitetura e Fluxo de Dados
+---
 
-A comunicação externa é feita via **gRPC**. Internamente, o sistema utiliza o **Apache Kafka** para desacoplar a ingestão da mensagem (Producer) da persistência e do roteamento (Consumers/Workers).
+# 📌 Visão Geral
 
-**Fluxo de uma Mensagem:**
-1. **Cliente:** Envia mensagem via RPC `SendMessage`.
-2. **`server.py` (gRPC Gateway/Producer):** Autentica, valida e publica a mensagem no tópico `messages` do Kafka (Status: **PENDING**).
-3. **`worker.py` (Persister Consumer):** Consome a mensagem, salva no MongoDB (Status: **SENT**).
-4. **`router_worker.py` (Router Consumer):** Consome a mesma mensagem, simula a entrega e atualiza o status no MongoDB para **DELIVERED**.
-5. **Cliente:** Usa RPC `ListMessages` para ler o histórico completo e o estado final (`DELIVERED`).
+O Chat4All v2 é um sistema modular construído para receber mensagens, processá-las e encaminhá-las para diferentes plataformas através de conectores desacoplados. A arquitetura combina performance (gRPC), escalabilidade (Kafka) e extensibilidade (conectores independentes).
 
-## Endpoints e Contratos
+---
 
-A API é definida usando **Protocol Buffers** (gRPC).
+# 🧩 Arquitetura Geral
 
-### 1. Autenticação (GetToken)
+A plataforma é composta por:
 
-| RPC | Método | Entrada | Saída | Descrição |
-| :--- | :--- | :--- | :--- | :--- |
-| `GetToken` | Unário | `TokenRequest` | `TokenResponse` | Gera um token JWT simples para acesso aos serviços. |
+### 🔹 **API gRPC (Router)**
 
-**Exemplo de Uso (Cliente):**
+Recebe mensagens e distribui para os tópicos do Kafka.
 
-```python
-# client.py: Obter Token
-stub.GetToken(chat4all_pb2.TokenRequest(client_id="admin_client", client_secret="super_secret_key"))
+### 🔹 **Workers Kafka**
 
-# client.py: Listar Mensagens
-stub.ListMessages(
-    chat4all_pb2.ListMessagesRequest(
-        conversation_id=CONVERSATION_ID,
-        since_timestamp=0 
-    ),
-    metadata=get_auth_metadata(ACCESS_TOKEN) # Requer autenticação!
-)
+Processam mensagens de tópicos específicos e chamam os conectores.
 
-1. Configuração Inicial e Stubs
-Instale as dependências e gere os arquivos Python a partir do contrato Protobuf.
+### 🔹 **Conectores**
 
-Bash
+Enviam mensagens para sistemas externos (WhatsApp/Instagram no projeto atual).
 
-# 1. Instalar dependências (dentro do .venv)
-pip install -r requirements.txt 
+### 🔹 **Kafka + Zookeeper**
 
-# 2. Gerar arquivos gRPC Stubs
-python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. chat4all.proto
-2. Inicialização da Infraestrutura (Docker Compose)
-O arquivo docker-compose.yml gerencia o ciclo de vida do MongoDB, Kafka e ZooKeeper.
+Barramento de eventos distribuído.
 
-Ação: Execute o comando para iniciar a infraestrutura em background.
+### 🔹 **Prometheus + Grafana**
 
-Bash
+Monitoramento e observabilidade.
 
-# Inicia todos os serviços (Kafka, MongoDB, etc.)
+### 🔹 **Locust**
+
+Testes de carga e simulação de múltiplos usuários.
+
+---
+
+# 🚀 Como Executar o Projeto
+
+## 1. Clonar o repositório
+
+```bash
+git clone https://github.com/sunrayflower/chat4all_ver2.git
+cd chat4all_ver2
+```
+
+## 2. Acessar o ambiente virtual
+
+```bash
+.\.venv\Scripts\activate
+```
+## 3. Instalar as ferramentas necessárias
+
+```bash
+pip install -r requirements.txt
+```
+
+## 4. Subir toda a stack com Docker Compose
+
+```bash
 docker-compose up -d --build
+```
 
-3. Execução dos Serviços Python
-Os componentes Python (Server e Workers) devem ser rodados fora do Docker (para facilitar o desenvolvimento e debug), conectando-se aos contêineres Docker via localhost.
+Isso iniciará:
 
-Abra três terminais separados e execute cada script
-python server.py
-python worker.py
-python router_worker.py
+* API gRPC
+* Workers
+* Kafka
+* Zookeeper
+* Prometheus
+* Grafana
 
-4. Testando a Plataforma
-Use o client.py para enviar mensagens e listar o histórico.
+## 5. Acessar o Grafana
+
+```
+http://localhost:3000
+```
+
+Usuário padrão: **admin / admin**
+
+## 6. Rodar testes de carga (Locust)
+
+```bash
+locust -f locustfile.py
+```
+
+Interface:
+
+```
+http://localhost:8089
+```
+
+---
+
+# 📡 Comunicação gRPC
+
+O arquivo principal da API é:
+
+```
+chat.proto
+```
+
+Para recompilar os stubs gRPC:
+
+```bash
+python -m grpc_tools.protoc -I=api --python_out=api --grpc_python_out=api chat.proto
+```
+
+---
+
+# 🔌 Conectores
+
+Atualmente existem dois conectores ativos:
+
+* **WhatsApp** (simulado)
+* **Instagram** (simulado)
+
+Eles são chamados automaticamente pelos workers.
+
+---
+
+# 📈 Observabilidade
+
+O sistema expõe métricas para Prometheus:
+
+```
+http://localhost:8000/metrics
+```
+
+E os dashboards podem ser visualizados no Grafana.
+
+👉 **Inserir captura de tela aqui** (dashboard geral)
+
+---
+
+# 🔥 Testes de Carga com Locust
+
+Os testes simulam usuários enviando mensagens via gRPC.
+
+
+
+
+---
+
+# 🛠 Tecnologias Utilizadas
+
+* Python 3.12
+* Kafka / Zookeeper
+* gRPC
+* Docker + Docker Compose
+* Prometheus
+* Grafana
+* Locust
+
 
