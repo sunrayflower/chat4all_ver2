@@ -96,13 +96,13 @@ http://localhost:8089
 O arquivo principal da API é:
 
 ```
-chat.proto
+chat4all.proto
 ```
 
 Para recompilar os stubs gRPC:
 
 ```bash
-python -m grpc_tools.protoc -I=api --python_out=api --grpc_python_out=api chat.proto
+python -m grpc_tools.protoc -I=api --python_out=api --grpc_python_out=api chat4all.proto
 ```
 
 ---
