@@ -15,11 +15,13 @@ scrape_configs:
     # Se estivessem em containers, usaríamos o nome do serviço.
     static_configs:
       - targets:
-          # Worker Persister/Updater
-          - 'host.docker.internal:8000' 
-          # Router Worker
-          - 'host.docker.internal:8001' 
-          # Connector WhatsApp
-          - 'host.docker.internal:8002' 
           # gRPC Server (Ingestão)
-          - 'host.docker.internal:8003'
+          - 'host.docker.internal:8000'
+          # Worker Persister/Updater
+          - 'host.docker.internal:8001' 
+          # Router Worker
+          - 'host.docker.internal:8002' 
+          # Connector WhatsApp
+          - 'host.docker.internal:8003' 
+          # Connector Instagram
+          - 'host.docker.internal:8004'

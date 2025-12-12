@@ -19,11 +19,6 @@ CLIENT_SECRET = "super_secret_key"
 NUM_USERS = 10      # Número de usuários (threads) simulados
 MESSAGES_PER_USER = 10 # Mensagens que cada usuário enviará
 
-# Variável de Controle (Usada para Autenticação e Conversa)
-# NOTA: Em testes de carga real, cada usuário teria seu próprio token e conversa.
-# Aqui, usamos um token único por thread/usuário para simplificar.
-
-# --- FUNÇÕES AUXILIARES ---
 
 def get_stubs(channel):
     """Retorna o stub do ChatService."""
@@ -86,7 +81,7 @@ def user_simulation_task(user_index):
         start_time = time.time()
         
         # 3. Envio Concorrente de Mensagens
-        print(f"[{user_id}] ▶️ Iniciando envio de {MESSAGES_PER_USER} mensagens...")
+        print(f"[{user_id}] Iniciando envio de {MESSAGES_PER_USER} mensagens...")
         
         for i in range(MESSAGES_PER_USER):
             message_id = str(uuid.uuid4())
@@ -96,21 +91,19 @@ def user_simulation_task(user_index):
                 message_id=message_id,
                 conversation_id=conv_id,
                 from_user=user_id,
-                to=["load_test_target"],
-                channels=["whatsapp"], # Rota para o Connector WhatsApp Mock
+                to=["user_ray"],
+                channels=["all"],
                 payload=chat4all_pb2.MessagePayload(type="text", text=message_text)
             )
             
             try:
-                # O SendMessage é síncrono (espera o ACK do Kafka), o que mede bem o throughput.
                 stub.SendMessage(message_request, metadata=metadata)
-                # print(f"[{user_id}] Enviou {message_id[:8]}...")
             except grpc.RpcError as e:
-                print(f"[{user_id}] ❌ ERRO de Envio gRPC: {e.details()}")
+                print(f"[{user_id}] ERRO de Envio gRPC: {e.details()}")
                 
         end_time = time.time()
         total_time = end_time - start_time
-        print(f"[{user_id}] ✅ Concluído. Tempo total de envio: {total_time:.2f}s")
+        print(f"[{user_id}] Concluído. Tempo total de envio: {total_time:.2f}s")
         return total_time
 
 # --- FUNÇÃO PRINCIPAL DE CARGA ---

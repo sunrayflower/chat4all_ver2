@@ -27,7 +27,7 @@ if _version_not_supported:
 
 class ChatServiceStub(object):
     """===================================================
-    1. Definição do Serviço (Interface da API)
+    1. Definição dos Serviços (Interface da API)
     ===================================================
 
     """
@@ -63,11 +63,16 @@ class ChatServiceStub(object):
                 request_serializer=chat4all__pb2.NotificationRequest.SerializeToString,
                 response_deserializer=chat4all__pb2.NotificationResponse.FromString,
                 _registered_method=True)
+        self.MapUser = channel.unary_unary(
+                '/chat4all.ChatService/MapUser',
+                request_serializer=chat4all__pb2.MapUserRequest.SerializeToString,
+                response_deserializer=chat4all__pb2.MapUserResponse.FromString,
+                _registered_method=True)
 
 
 class ChatServiceServicer(object):
     """===================================================
-    1. Definição do Serviço (Interface da API)
+    1. Definição dos Serviços (Interface da API)
     ===================================================
 
     """
@@ -87,23 +92,29 @@ class ChatServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def ListMessages(self, request, context):
-        """6.2 Listar Mensagens de uma Conversa
-        Nota: Usamos Server Streaming para otimizar a transferência de grandes listas.
+        """6.2 Listar Mensagens (Server Streaming)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def SendMessage(self, request, context):
-        """6.3 Enviar Mensagem (Unary - Requisição/Resposta)
-        Nota: Para grandes volumes, Client Streaming ou Bidirectional seria melhor.
+        """6.3 Enviar Mensagem (Ingestão)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ReceiveNotification(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """6.4 Receber Notificação de Status (Callback/Webhook)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def MapUser(self, request, context):
+        """NOVO: RPC para Mapear Usuários (Se você for adicionar este serviço na API)
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -136,6 +147,11 @@ def add_ChatServiceServicer_to_server(servicer, server):
                     request_deserializer=chat4all__pb2.NotificationRequest.FromString,
                     response_serializer=chat4all__pb2.NotificationResponse.SerializeToString,
             ),
+            'MapUser': grpc.unary_unary_rpc_method_handler(
+                    servicer.MapUser,
+                    request_deserializer=chat4all__pb2.MapUserRequest.FromString,
+                    response_serializer=chat4all__pb2.MapUserResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'chat4all.ChatService', rpc_method_handlers)
@@ -146,7 +162,7 @@ def add_ChatServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class ChatService(object):
     """===================================================
-    1. Definição do Serviço (Interface da API)
+    1. Definição dos Serviços (Interface da API)
     ===================================================
 
     """
@@ -286,9 +302,36 @@ class ChatService(object):
             metadata,
             _registered_method=True)
 
+    @staticmethod
+    def MapUser(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/chat4all.ChatService/MapUser',
+            chat4all__pb2.MapUserRequest.SerializeToString,
+            chat4all__pb2.MapUserResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
 
 class FileServiceStub(object):
-    """--- NOVO SERVIÇO DE ARQUIVOS (Object Storage Gateway) ---
+    """--- SERVIÇO DE ARQUIVOS (Object Storage Gateway) ---
 
     """
 
@@ -316,7 +359,7 @@ class FileServiceStub(object):
 
 
 class FileServiceServicer(object):
-    """--- NOVO SERVIÇO DE ARQUIVOS (Object Storage Gateway) ---
+    """--- SERVIÇO DE ARQUIVOS (Object Storage Gateway) ---
 
     """
 
@@ -329,7 +372,6 @@ class FileServiceServicer(object):
 
     def CompleteUpload(self, request, context):
         """2. Finaliza o upload multipart no Object Storage
-        (Este passo será implementado após o GetUploadUrl)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -369,7 +411,7 @@ def add_FileServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class FileService(object):
-    """--- NOVO SERVIÇO DE ARQUIVOS (Object Storage Gateway) ---
+    """--- SERVIÇO DE ARQUIVOS (Object Storage Gateway) ---
 
     """
 

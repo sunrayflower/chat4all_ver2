@@ -1,14 +1,10 @@
 import grpc
 import time
-
-# Importa os módulos gerados
 import chat4all_pb2
 import chat4all_pb2_grpc
 
-# Endereço do Servidor
 SERVER_ADDRESS = 'localhost:50051'
 
-# Variável global para armazenar o token
 ACCESS_TOKEN = ""
 CONVERSATION_ID = ""
 
@@ -18,9 +14,7 @@ def get_auth_metadata(access_token):
 
 def run():
     global ACCESS_TOKEN, CONVERSATION_ID
-    
-    # 1. Conexão com o Servidor
-    # Usamos `insecure_channel` pois não estamos usando TLS/SSL no exemplo
+
     with grpc.insecure_channel(SERVER_ADDRESS) as channel:
         stub = chat4all_pb2_grpc.ChatServiceStub(channel)
         
@@ -50,7 +44,7 @@ def run():
             
             conversation_request = chat4all_pb2.ConversationCreateRequest(
                 type=chat4all_pb2.ConversationCreateRequest.ConversationType.PRIVATE,
-                members=["userA", "userB"],
+                members=["user_fabo", "user_ray", "user_giovanna"],
                 metadata={"topic": "Project Chat4All"}
             )
             
@@ -65,24 +59,22 @@ def run():
             print(f"Erro ao criar conversa: {e.details()}")
             return
 
-        # ----------------------------------------------------
-
         print("--- 3. Teste de Envio de Mensagem (SendMessage) ---")
         try:
             # 6.3 Enviar Mensagem
             metadata = get_auth_metadata(ACCESS_TOKEN)
             
             message_payload = chat4all_pb2.MessagePayload(
-                            type="text", # <--- ADICIONE ESTA LINHA PARA DEFINIR O TIPO
+                            type="text", 
                             text="Olá! Testando envio via gRPC."            
             )
 
             message_request = chat4all_pb2.SendMessageRequest(
                 message_id=str(uuid.uuid4()),
                 conversation_id=CONVERSATION_ID,
-                from_user="userA",
-                to=["userB"],
-                channels=["sms", "whatsapp"],
+                from_user="user_giovanna",
+                to=["user_giovanna", "user_ray"],
+                channels=["all"],
                 payload=message_payload
             )
             
@@ -112,7 +104,7 @@ def run():
             
             list_request = chat4all_pb2.ListMessagesRequest(
                 conversation_id=CONVERSATION_ID,
-                since_timestamp=0 # 0 para listar todas
+                since_timestamp=0
             )
             
             # O Server Streaming retorna um iterador
@@ -123,15 +115,10 @@ def run():
             for message in response: 
                 count += 1
                 
-                # Conversão do timestamp para legibilidade
-                # É importante usar datetime.fromtimestamp e lidar com milissegundos
                 from datetime import datetime
                 dt_object = datetime.fromtimestamp(message.timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
-
-                # <<< NOVO CÓDIGO AQUI: OBTENDO O NOME LEGÍVEL DO STATUS >>>
                 status_name = chat4all_pb2.MessageStatus.Name(message.status)
 
-                # <<< NOVO PRINT PARA INCLUIR O STATUS >>>
                 print(f"  [{dt_object}] De: {message.message_data.from_user} -> Texto: {message.message_data.payload.text} (Status: {status_name})")
 
             if count == 0:
@@ -143,5 +130,5 @@ def run():
 
 
 if __name__ == '__main__':
-    import uuid # Importa aqui para simplificar
+    import uuid 
     run()

@@ -3,7 +3,7 @@ syntax = "proto3";
 package chat4all;
 
 // ===================================================
-// 1. Definição do Serviço (Interface da API)
+// 1. Definição dos Serviços (Interface da API)
 // ===================================================
 
 service ChatService {
@@ -13,25 +13,26 @@ service ChatService {
   // 6.2 Conversas
   rpc CreateConversation (ConversationCreateRequest) returns (Conversation);
   
-  // 6.2 Listar Mensagens de uma Conversa
-  // Nota: Usamos Server Streaming para otimizar a transferência de grandes listas.
+  // 6.2 Listar Mensagens (Server Streaming)
   rpc ListMessages (ListMessagesRequest) returns (stream Message);
 
-  // 6.3 Enviar Mensagem (Unary - Requisição/Resposta)
-  // Nota: Para grandes volumes, Client Streaming ou Bidirectional seria melhor.
+  // 6.3 Enviar Mensagem (Ingestão)
   rpc SendMessage (SendMessageRequest) returns (SendMessageResponse);
 
+  // 6.4 Receber Notificação de Status (Callback/Webhook)
   rpc ReceiveNotification(NotificationRequest) returns (NotificationResponse);
+
+  // NOVO: RPC para Mapear Usuários (Se você for adicionar este serviço na API)
+  rpc MapUser (MapUserRequest) returns (MapUserResponse);
 }
 
-// --- NOVO SERVIÇO DE ARQUIVOS (Object Storage Gateway) ---
+// --- SERVIÇO DE ARQUIVOS (Object Storage Gateway) ---
 
 service FileService {
   // 1. Inicia o upload e retorna URLs pré-assinadas para as partes
   rpc GetUploadUrl(GetUploadUrlRequest) returns (GetUploadUrlResponse);
 
   // 2. Finaliza o upload multipart no Object Storage
-  // (Este passo será implementado após o GetUploadUrl)
   rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse);
 
   // 3. Retorna uma URL temporária para download
@@ -39,10 +40,10 @@ service FileService {
 }
 
 // ===================================================
-// 2. Mensagens (Estruturas de Dados)
+// 2. Mensagens e Estruturas de Dados
 // ===================================================
 
-// --- Autenticação (6.1) ---
+// --- Estruturas de Autenticação ---
 message TokenRequest {
   string client_id = 1;
   string client_secret = 2;
@@ -50,12 +51,11 @@ message TokenRequest {
 
 message TokenResponse {
   string access_token = 1;
-  int32 expires_in = 2; // 3600 segundos
+  int32 expires_in = 2;
 }
 
-// --- Conversas (6.2) ---
+// --- Estruturas de Conversas ---
 message ConversationCreateRequest {
-  // Usamos um enum para o tipo para garantir a tipagem estrita
   enum ConversationType {
     PRIVATE = 0;
     GROUP = 1;
@@ -72,19 +72,16 @@ message Conversation {
   map<string, string> metadata = 4;
 }
 
+// --- Estruturas de Mensagens ---
 message ListMessagesRequest {
   string conversation_id = 1;
-  int64 since_timestamp = 2; // Campo opcional (0 = não filtrar)
+  int64 since_timestamp = 2;
 }
 
-
-// --- Mensagens (6.3) ---
 message MessagePayload {
   string type = 1; // "text" ou "file"
-
-  oneof content {
-    string text = 2;
-  }
+  string text = 2;
+  // O oneof não é estritamente necessário se você usar o `type` acima.
 }
 
 message SendMessageRequest {
@@ -92,32 +89,34 @@ message SendMessageRequest {
   string conversation_id = 2;
   string from_user = 3;
   repeated string to = 4;
-  repeated string channels = 5; // ex: ["whatsapp", "instagram"] ou ["all"]
+  repeated string channels = 5; 
   MessagePayload payload = 6;
   map<string, string> metadata = 7;
-  repeated FileMetadata file_attachments = 8; // Referência a arquivos anexados
+  repeated FileMetadata file_attachments = 8;
 }
 
 message SendMessageResponse {
-  string status = 1; // "accepted"
+  string status = 1;
   string message_id = 2;
 }
 
+// --- Status de Mensagem (Rastreio) ---
 enum MessageStatus {
   MESSAGE_STATUS_UNSPECIFIED = 0;
-  SENT = 1;     
-  DELIVERED = 2; // Entregue ao nosso sistema (Router Worker)
-  SENT_TO_EXTERNAL = 3; // << NOVO STATUS: Enviada com sucesso para a API externa (Connector Mock)
-  RECEIVED = 4; 
-  READ = 5;     
-  FAILED = 6;   
+  SENT = 1;       // Aceito pelo servidor (Persistido no Mongo)
+  DELIVERED = 2;  // Entregue ao Router/Middleware
+  SENT_TO_EXTERNAL = 3; // Enviada à API externa (WhatsApp, Instagram, etc.)
+  RECEIVED = 4;   // Recebida pelo dispositivo alvo
+  READ = 5;       // Lida pelo usuário alvo
+  FAILED = 6;
 }
 
+// --- Estruturas de Callback de Status ---
 message NotificationRequest {
   string message_id = 1;
-  MessageStatus status = 2; // O novo status (RECEIVED, READ, FAILED)
-  string channel = 3;       // Canal que enviou a notificação
-  string remote_id = 4;     // ID da mensagem na plataforma externa (Opcional)
+  MessageStatus status = 2;
+  string channel = 3;
+  string remote_id = 4;
 }
 
 message NotificationResponse {
@@ -125,17 +124,54 @@ message NotificationResponse {
   string message = 2;
 }
 
+// --- Estruturas de Mapeamento de Usuário ---
+message MapUserRequest {
+  string internal_id = 1;
+  string whatsapp_id = 2;
+  string instagram_id = 3;
+  // Poderia ser mais genérico: repeated UserChannelMapping mappings = 4;
+}
+
+message MapUserResponse {
+  bool success = 1;
+}
+
+
+// ===================================================
+// 3. Estruturas de Arquivos (FileService)
+// ===================================================
+
+// --- Metadados e Status Final ---
+message FileMetadata {
+  string file_id = 1;
+  string filename = 2;
+  string mime_type = 3;
+  int64 size_bytes = 4;
+  string checksum_sha256 = 5;
+  string uploader_id = 6;
+  string conversation_id = 7;
+  string storage_bucket = 8;
+  string storage_key = 9;
+}
+
+message Message {
+  SendMessageRequest message_data = 1;
+  int64 timestamp = 2;
+  MessageStatus status = 3;
+}
+
+// --- Upload Multipart ---
 message CompletedPart {
-  string part_etag = 1; // O ETag retornado pelo MinIO/S3 após o upload de cada parte
+  string part_etag = 1;
   int32 part_number = 2;
 }
 
 message CompleteUploadRequest {
   string file_id = 1;
-  string upload_session_id = 2; // ID da sessão retornado no GetUploadUrlResponse
-  repeated CompletedPart completed_parts = 3; // Lista das partes enviadas
-  string checksum_sha256 = 4; // O checksum final do arquivo (para validação)
-  string conversation_id = 5; 
+  string upload_session_id = 2;
+  repeated CompletedPart completed_parts = 3;
+  string checksum_sha256 = 4;
+  string conversation_id = 5;
   int64 file_size = 6;
 }
 
@@ -143,60 +179,28 @@ message CompleteUploadResponse {
   string file_id = 1;
   bool success = 2;
   string message = 3;
-  
-  // Metadados do arquivo persistidos
-  FileMetadata file_metadata = 4; 
+  FileMetadata file_metadata = 4;
 }
-
-// Representação completa de uma mensagem persistida
-message Message {
-  // Dados da mensagem (o request original do cliente)
-  SendMessageRequest message_data = 1; 
-
-  // Metadados de Persistência (Worker)
-  int64 timestamp = 2; // Timestamp (em ms) de quando foi persistida no Worker
-
-  // O novo campo de status
-  MessageStatus status = 3; // Estado atual da mensagem
-}
-
-// --- Estruturas de Dados para Arquivos ---
-
-// Metadados de um arquivo (para ser armazenado no MongoDB)
-message FileMetadata {
-  string file_id = 1;         // UUID único para o arquivo
-  string filename = 2;        // Nome original do arquivo
-  string mime_type = 3;       // Tipo MIME (e.g., application/pdf)
-  int64 size_bytes = 4;       // Tamanho total do arquivo
-  string checksum_sha256 = 5; // Checksum SHA256 do arquivo (para integridade)
-  string uploader_id = 6;     // ID do usuário que fez o upload
-  string conversation_id = 7; // ID da conversa onde o arquivo será anexado
-
-  // Metadados de Object Storage
-  string storage_bucket = 8;  // Bucket onde o arquivo está
-  string storage_key = 9;     // Chave de acesso dentro do bucket (caminho)
-}
-
-// --- RPCs de Geração de URL (Upload e Download) ---
 
 message GetUploadUrlRequest {
   string filename = 1;
   string conversation_id = 2;
-  int64 file_size = 3; 
-  int32 num_parts = 4;        // Número de partes para upload multipart
+  int64 file_size = 3;
+  int32 num_parts = 4;
 }
 
 message UploadPartInfo {
-  int32 part_number = 1;      // Número da parte (de 1 a N)
-  string presigned_url = 2;   // URL para upload daquela parte
+  int32 part_number = 1;
+  string presigned_url = 2;
 }
 
 message GetUploadUrlResponse {
   string file_id = 1;
-  string upload_session_id = 2; // ID da sessão de upload multipart (se aplicável)
-  repeated UploadPartInfo parts = 3; // Lista de URLs para upload de partes
+  string upload_session_id = 2;
+  repeated UploadPartInfo parts = 3;
 }
 
+// --- Download ---
 message GetDownloadUrlRequest {
   string file_id = 1;
 }

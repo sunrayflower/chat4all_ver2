@@ -65,12 +65,13 @@ def send_status_update_grpc(message_id, status_enum, channel, worker_name):
 # ------------------------------------------------------------
 # Função principal do conector
 # ------------------------------------------------------------
-def run_connector(channel_name, group_id, db, worker_name):
+def run_connector(channel_name, group_id, kafka_topic_consume, db, worker_name):
 
     # Kafka Consumer
     try:
+        print(f"[{channel_name}] 🔍 Tentando consumir do Tópico: '{kafka_topic_consume}' com Grupo: '{group_id}'")
         consumer = KafkaConsumer(
-            KAFKA_TOPIC_MESSAGES,
+            kafka_topic_consume,
             group_id=group_id,
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
             auto_offset_reset="latest",
@@ -92,11 +93,7 @@ def run_connector(channel_name, group_id, db, worker_name):
         try:
             pb = chat4all_pb2.SendMessageRequest()
             pb.ParseFromString(message.value)
-
-            # Verifica se o canal corresponde
-            if channel_name.lower() not in [c.lower() for c in pb.channels]:
-                continue
-
+        
             print("-" * 50)
             print(f"[{channel_name}] Recebida {pb.message_id}")
 

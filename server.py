@@ -52,7 +52,9 @@ except Exception as e:
     print("[MinIO] ERRO:", e)
     S3_CLIENT = None
 
+# ============================================================
 # MONGODB
+# ============================================================
 MONGO_URI = "mongodb://localhost:27017/"
 MONGO_DATABASE = "chat4all_v2"
 
@@ -153,6 +155,7 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
         CONVERSATIONS_DB[conv_id] = conv
         print(f"[{client_id}] Conversa criada: {conv_id}")
         return conv
+    
 
     def SendMessage(self, request, context):
         client_id = self._auth(context)
@@ -308,7 +311,7 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
 
         message_id = request.message_id
         new_status = request.status
-        channel = request.channel if hasattr(request, "channel") else ""
+        channel = request.channel.lower() if hasattr(request, "channel") else ""
 
         allowed = {
             chat4all_pb2.MessageStatus.RECEIVED,
@@ -316,6 +319,7 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
             chat4all_pb2.MessageStatus.FAILED,
             chat4all_pb2.MessageStatus.DELIVERED
         }
+
         if new_status not in allowed:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Status inválido para notificação.")
             return chat4all_pb2.NotificationResponse(success=False, message="Status inválido")
@@ -325,12 +329,23 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
             context.abort(grpc.StatusCode.NOT_FOUND, f"Mensagem {message_id} não encontrada")
             return chat4all_pb2.NotificationResponse(success=False, message="Mensagem não encontrada")
 
-        if channel:
-            channels = [c.lower() for c in msg_doc.get("channels", [])]
-            if channel.lower() not in channels:
-                context.abort(grpc.StatusCode.INVALID_ARGUMENT, f"Canal '{channel}' não corresponde à mensagem")
+        # Canais da mensagem
+        channels = [c.lower() for c in msg_doc.get("channels", [])]
+
+        # ----------------------
+        #   VALIDAÇÃO CORRETA
+        # ----------------------
+        if 'all' not in channels:
+            if channel not in channels:
+                context.abort(
+                    grpc.StatusCode.INVALID_ARGUMENT,
+                    f"Canal '{channel}' não corresponde à mensagem original"
+                )
                 return chat4all_pb2.NotificationResponse(success=False, message="Canal inválido")
 
+        # ----------------------
+        # Atualiza status no Mongo
+        #------------------------
         try:
             now_ms = int(time.time() * 1000)
             audit_entry = {
@@ -338,17 +353,20 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
                 "channel": channel,
                 "timestamp": now_ms
             }
+
             MESSAGES_COLLECTION.update_one(
                 {"_id": message_id},
-                {"$set": {"status": int(new_status), "status_updated_at": now_ms},
-                 "$push": {"status_history": audit_entry}}
+                {
+                    "$set": {"status": int(new_status), "status_updated_at": now_ms},
+                    "$push": {"status_history": audit_entry}
+                }
             )
         except Exception as e:
             print(f"[ReceiveNotification] ERRO ao atualizar Mongo: {e}")
             context.abort(grpc.StatusCode.INTERNAL, "Falha ao atualizar status no banco")
             return chat4all_pb2.NotificationResponse(success=False, message="Erro DB")
 
-        # Publish notification to Kafka notifications topic (optional)
+        # Kafka (opcional)
         if KAFKA_PRODUCER is not None:
             try:
                 notif_bytes = request.SerializeToString()

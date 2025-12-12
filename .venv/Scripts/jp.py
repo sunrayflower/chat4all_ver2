@@ -1,4 +1,4 @@
-#!C:\Users\rayss\Downloads\chat4all_ver2\.venv\Scripts\python.exe
+#!c:\Users\nanna\OneDrive\Documents\doredesespero\.venv\Scripts\python.exe
 
 import sys
 import json

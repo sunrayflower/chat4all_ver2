@@ -8,9 +8,8 @@ from datetime import datetime # Certifique-se de importar datetime
 
 # --- Configurações Comuns ---
 KAFKA_BOOTSTRAP_SERVERS = ['localhost:9092']
-# NOVO TÓPICO que o servidor irá publicar ao receber webhooks
 KAFKA_TOPIC_NOTIFICATIONS = 'notifications' 
-KAFKA_GROUP_ID = 'chat4all_status_updater' 
+KAFKA_GROUP_ID = 'chat4all_status_updater_v4' 
 
 # --- Configurações MongoDB ---
 MONGO_URI = "mongodb://localhost:27017/" 
@@ -82,6 +81,7 @@ def run_status_update_worker():
     if db is None: return
 
     try:
+        print(f"Status Update Worker: Consumer pronto no tópico '{KAFKA_TOPIC_NOTIFICATIONS}' com Grupo: '{KAFKA_GROUP_ID}'...")
         consumer = KafkaConsumer(
             KAFKA_TOPIC_NOTIFICATIONS, # Consumindo o NOVO TÓPICO
             group_id=KAFKA_GROUP_ID, 
