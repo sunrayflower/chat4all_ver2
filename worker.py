@@ -4,7 +4,7 @@ import json
 import os
 from kafka import KafkaConsumer
 from pymongo import MongoClient, errors
-import chat4all_pb2  # Necessário para desserializar a mensagem Protobuf
+import chat4all_pb2 
 import metrics_setup
 
 WORKER_NAME = "Persister"
@@ -62,7 +62,8 @@ def persist_message(db, message_pb):
         "metadata": dict(message_pb.metadata),
         "file_attachments": file_attachments_list,
         "received_at": received_at_ms,
-        "status": chat4all_pb2.MessageStatus.SENT
+        "status": chat4all_pb2.MessageStatus.SENT,
+        "seq_num": message_pb.seq_num
     }
 
     try:

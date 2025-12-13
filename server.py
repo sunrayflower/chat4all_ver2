@@ -16,16 +16,12 @@ import chat4all_pb2_grpc
 
 import metrics_setup
 
-# ----------------------------
-# Metrics (port chosen to avoid conflicts)
-# ----------------------------
+# Metrics
 WORKER_NAME = "gRPCServer"
-METRICS_PORT = 8003  # altere se quiser outra porta
+METRICS_PORT = 8004 
 # Note: start_metrics_server called inside serve()
 
-# ============================================================
 # MINIO / S3 CONFIG
-# ============================================================
 MINIO_ENDPOINT = "http://localhost:9000"
 MINIO_BUCKET = "chat4all-files"
 MINIO_ACCESS_KEY = "minioadmin"
@@ -52,9 +48,7 @@ except Exception as e:
     print("[MinIO] ERRO:", e)
     S3_CLIENT = None
 
-# ============================================================
 # MONGODB
-# ============================================================
 MONGO_URI = "mongodb://localhost:27017/"
 MONGO_DATABASE = "chat4all_v2"
 
@@ -69,9 +63,7 @@ except Exception as e:
     MESSAGES_COLLECTION = None
     FILES_COLLECTION = None
 
-# ============================================================
-# JWT
-# ============================================================
+# JWT CONFIG
 SECRET_KEY = "sua-chave-secreta-estatica-e-segura"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_SECONDS = 3600
@@ -97,9 +89,7 @@ def verify_access_token(context, metadata):
         context.abort(grpc.StatusCode.UNAUTHENTICATED, "Token inválido")
         return None
 
-# ============================================================
 # KAFKA PRODUCER & TOPICS
-# ============================================================
 KAFKA_TOPIC_MESSAGES = "messages"
 KAFKA_TOPIC_NOTIFICATIONS = "notifications"
 
@@ -114,16 +104,34 @@ except Exception as e:
     print("[Kafka] ERRO:", e)
     KAFKA_PRODUCER = None
 
-# ============================================================
+# SEQUENCE NUMBER CACHE
+CONVERSATION_SEQ_CACHE = {}
+
+def get_next_seq(conversation_id):
+    """Gera próximo sequence number para a conversa"""
+    if conversation_id not in CONVERSATION_SEQ_CACHE:
+        # Buscar último seq_num do MongoDB
+        if MESSAGES_COLLECTION is not None:
+            last_msg = MESSAGES_COLLECTION.find_one(
+                {"conversation_id": conversation_id},
+                sort=[("seq_num", -1)]
+            )
+            CONVERSATION_SEQ_CACHE[conversation_id] = (
+                last_msg.get("seq_num", 0) if last_msg else 0
+            )
+        else:
+            CONVERSATION_SEQ_CACHE[conversation_id] = 0
+    
+    CONVERSATION_SEQ_CACHE[conversation_id] += 1
+    return CONVERSATION_SEQ_CACHE[conversation_id]
+
 # CHAT SERVICE
-# ============================================================
 class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
 
     def _auth(self, context):
         return verify_access_token(context, context.invocation_metadata())
 
     def GetToken(self, request, context):
-        # Debug logs to help with failing requests from gateway
         try:
             print(f"[GetToken] request.client_id = {repr(request.client_id)}")
             print(f"[GetToken] request.client_secret = {repr(request.client_secret)}")
@@ -155,13 +163,6 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
         CONVERSATIONS_DB[conv_id] = conv
         print(f"[{client_id}] Conversa criada: {conv_id}")
         return conv
-    
-    def get_next_sequence(conversation_id):
-        result = MESSAGES_COLLECTION.find_one(
-            {"conversation_id": conversation_id},
-             sort=[("seq_num", -1)]
-        )
-        return (result["seq_num"] + 1) if result else 1
 
     def SendMessage(self, request, context):
         client_id = self._auth(context)
@@ -171,11 +172,8 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
         start_time = time.time()
         success_label = "SUCCESS"
 
-        seq_num = get_next_sequence(request.conversation_id)
-        message_dict["seq_num"] = seq_num 
-
         try:
-            # Basic validation for payload (expect 'type' and possibly 'text')
+            # Basic validation for payload
             payload_type = getattr(request.payload, "type", "text")
 
             if payload_type == "file":
@@ -204,10 +202,18 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
                 success_label = "KAFKA_FAILED"
                 return
 
-            # publish to Kafka
+            # Gerar seq_num
+            seq_num = get_next_seq(request.conversation_id)
+            
+            # Criar mensagem COM seq_num
+            message_with_seq = chat4all_pb2.SendMessageRequest()
+            message_with_seq.CopyFrom(request)
+            message_with_seq.seq_num = seq_num
+
+            # Enviar para Kafka COM seq_num
             KAFKA_PRODUCER.send(
                 KAFKA_TOPIC_MESSAGES,
-                value=request.SerializeToString(),
+                value=message_with_seq.SerializeToString(),
                 key=request.conversation_id.encode()
             ).get(timeout=5)
 
@@ -215,7 +221,6 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
             try:
                 metrics_setup.MESSAGES_PROCESSED_TOTAL.labels(WORKER_NAME, success_label).inc()
             except Exception:
-                # don't break RPC if metrics fail
                 print("[Metrics] aviso: falha ao incrementar MESSAGES_PROCESSED_TOTAL")
 
             return chat4all_pb2.SendMessageResponse(
@@ -224,7 +229,6 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
             )
 
         except grpc.RpcError:
-            # already aborted with context.abort, re-raise to propagate
             raise
         except Exception as e:
             print(f"[SendMessage] ERRO interno: {e}")
@@ -234,7 +238,6 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
                 pass
             context.abort(grpc.StatusCode.INTERNAL, "Erro interno no servidor.")
         finally:
-            # Always observe latency
             latency = time.time() - start_time
             try:
                 metrics_setup.LATENCY_SECONDS.labels(WORKER_NAME).observe(latency)
@@ -311,9 +314,7 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
 
             yield msg
 
-    # ============================================================
-    # ReceiveNotification — chamado pelos connectores (WhatsApp/Instagram)
-    # ============================================================
+    # ReceiveNotification — chamado pelos connectores
     def ReceiveNotification(self, request, context):
         if MESSAGES_COLLECTION is None:
             context.abort(grpc.StatusCode.INTERNAL, "MongoDB indisponível")
@@ -342,9 +343,6 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
         # Canais da mensagem
         channels = [c.lower() for c in msg_doc.get("channels", [])]
 
-        # ----------------------
-        #   VALIDAÇÃO CORRETA
-        # ----------------------
         if 'all' not in channels:
             if channel not in channels:
                 context.abort(
@@ -353,9 +351,7 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
                 )
                 return chat4all_pb2.NotificationResponse(success=False, message="Canal inválido")
 
-        # ----------------------
         # Atualiza status no Mongo
-        #------------------------
         try:
             now_ms = int(time.time() * 1000)
             audit_entry = {
@@ -390,9 +386,7 @@ class ChatServiceServicer(chat4all_pb2_grpc.ChatServiceServicer):
 
         return chat4all_pb2.NotificationResponse(success=True, message="Status atualizado")
 
-# ============================================================
-# FILE SERVICE (unchanged logic but kept tidy)
-# ============================================================
+# FILE SERVICE
 class FileServiceServicer(chat4all_pb2_grpc.FileServiceServicer):
 
     def _auth(self, context):
@@ -533,11 +527,8 @@ class FileServiceServicer(chat4all_pb2_grpc.FileServiceServicer):
             mime_type=file_doc["mime_type"]
         )
 
-# ============================================================
-# SERVER bootstrap
-# ============================================================
+# SERVER
 def serve():
-    # start metrics once
     try:
         metrics_setup.start_metrics_server(METRICS_PORT, WORKER_NAME)
     except Exception as e:

@@ -2,9 +2,7 @@ syntax = "proto3";
 
 package chat4all;
 
-// ===================================================
 // 1. Definição dos Serviços (Interface da API)
-// ===================================================
 
 service ChatService {
   // 6.1 Autenticação
@@ -39,9 +37,7 @@ service FileService {
   rpc GetDownloadUrl(GetDownloadUrlRequest) returns (GetDownloadUrlResponse);
 }
 
-// ===================================================
 // 2. Mensagens e Estruturas de Dados
-// ===================================================
 
 // --- Estruturas de Autenticação ---
 message TokenRequest {
@@ -93,6 +89,7 @@ message SendMessageRequest {
   MessagePayload payload = 6;
   map<string, string> metadata = 7;
   repeated FileMetadata file_attachments = 8;
+  int64 seq_num = 9;
 }
 
 message SendMessageResponse {

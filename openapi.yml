@@ -1,15 +1,16 @@
 openapi: 3.0.0
 info:
   title: Chat4All Messaging API
-  version: v2.0.0
+  version: v2.1.0
   description: |
     API de mensageria assíncrona baseada em gRPC, Kafka e MinIO (Object Storage).
-    
+
     **Arquitetura:**
     - **Servidor gRPC:** Porta 50051 (Gateway HTTP/gRPC).
     - **Mensageria Assíncrona:** Kafka (Tópicos 'messages' e 'notifications').
     - **Persistência:** MongoDB.
     - **Armazenamento de Arquivos:** MinIO/S3.
+    - **Ordenação Causal:** Sequence numbers garantem ordem de entrega.
 
 servers:
   - url: http://localhost:50051
@@ -25,7 +26,7 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Token JWT obtido via POST /auth/token
-  
+
 # =======================================================
 # 2. DEFINIÇÕES DE ESQUEMAS (Schemas / Modelos de Dados)
 # =======================================================
@@ -35,28 +36,68 @@ components:
       type: object
       required: [client_id, client_secret]
       properties:
-        client_id: {type: string, description: ID único do cliente.}
-        client_secret: {type: string, description: Segredo para gerar o token.}
+        client_id: 
+          type: string
+          description: ID único do cliente.
+          example: "admin_client"
+        client_secret: 
+          type: string
+          description: Segredo para gerar o token.
+          example: "super_secret_key"
 
     TokenResponse:
       type: object
       properties:
-        access_token: {type: string}
-        expires_in: {type: integer, description: Duração do token em segundos.}
+        access_token: 
+          type: string
+          description: Token JWT para autenticação.
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        expires_in: 
+          type: integer
+          description: Duração do token em segundos.
+          example: 3600
 
     # --- Conversas e Mensagens ---
     MessageStatus:
       type: integer
-      description: Ciclo de vida da mensagem (Baseado no ENUM Protobuf).
+      description: |
+        Ciclo de vida da mensagem (Baseado no ENUM Protobuf).
+        - 1: SENT - Mensagem enviada ao sistema
+        - 2: DELIVERED - Entregue ao canal externo
+        - 3: SENT_TO_EXTERNAL - Enviada para plataforma externa
+        - 4: RECEIVED - Recebida pelo destinatário
+        - 5: READ - Lida pelo destinatário
+        - 6: FAILED - Falha na entrega
       enum: [1, 2, 3, 4, 5, 6]
       x-enum-names: [SENT, DELIVERED, SENT_TO_EXTERNAL, RECEIVED, READ, FAILED]
+      example: 1
 
     FileMetadata:
       type: object
       description: Referência a um arquivo anexado (metadados ricos estão na coleção file_metadata).
       properties:
-        file_id: {type: string, format: uuid, description: ID único do arquivo no MinIO/DB.}
-        # Campos ricos (filename, size, etc.) seriam adicionados aqui para referência.
+        file_id: 
+          type: string
+          format: uuid
+          description: ID único do arquivo no MinIO/DB.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        filename:
+          type: string
+          description: Nome original do arquivo.
+          example: "document.pdf"
+        mime_type:
+          type: string
+          description: Tipo MIME do arquivo.
+          example: "application/pdf"
+        size_bytes:
+          type: integer
+          format: int64
+          description: Tamanho do arquivo em bytes.
+          example: 1048576
+        checksum_sha256:
+          type: string
+          description: Checksum SHA-256 para validação de integridade.
+          example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
     MessagePayload:
       type: object
@@ -67,23 +108,43 @@ components:
           type: string
           enum: [text, file]
           description: Tipo do conteúdo da mensagem.
+          example: "text"
         text:
           type: string
           nullable: true
           description: O corpo do texto (usado se type=text).
+          example: "Olá! Como vai?"
 
     SendMessageRequest:
       type: object
       required: [message_id, conversation_id, from_user, payload, channels]
       properties:
-        message_id: {type: string, format: uuid}
-        conversation_id: {type: string, format: uuid}
-        from_user: {type: string}
-        to: {type: array, items: {type: string}, description: Destinatários.}
+        message_id: 
+          type: string
+          format: uuid
+          description: ID único da mensagem (gerado pelo cliente).
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        conversation_id: 
+          type: string
+          format: uuid
+          description: ID da conversa onde a mensagem será enviada.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        from_user: 
+          type: string
+          description: Identificador do usuário remetente.
+          example: "user_giovanna"
+        to: 
+          type: array
+          items: 
+            type: string
+          description: Lista de destinatários.
+          example: ["user_ray", "user_fabo"]
         channels:
           type: array
-          items: {type: string}
-          description: Canais de destino (e.g., whatsapp, instagram).
+          items: 
+            type: string
+          description: Canais de destino (e.g., whatsapp, instagram, telegram, all).
+          example: ["whatsapp", "telegram"]
         payload:
           $ref: '#/components/schemas/MessagePayload'
         file_attachments:
@@ -92,68 +153,172 @@ components:
             $ref: '#/components/schemas/FileMetadata'
           description: Referências a arquivos anexados (usado se payload.type=file).
           nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Metadados adicionais da mensagem.
+          example: {"priority": "high", "tags": ["urgent"]}
+        seq_num:
+          type: integer
+          format: int64
+          description: |
+            Sequence number para ordenação causal (gerado automaticamente pelo servidor).
+            Garante ordem de entrega dentro de uma conversa.
+            Cliente NÃO precisa enviar este campo.
+          readOnly: true
+          example: 42
 
-SendMessageResponse: # 4 espaços (sob 'schemas:')
-      type: object        # 6 espaços
-      properties:         # 6 espaços (MESMO NÍVEL DE 'type')
-        status: {type: string, enum: [accepted], description: Indica que a mensagem foi aceita pelo Kafka.} # 8 espaços
-        message_id: {type: string, format: uuid}
+    SendMessageResponse:
+      type: object
+      properties:
+        status: 
+          type: string
+          enum: [accepted]
+          description: Indica que a mensagem foi aceita pelo Kafka.
+          example: "accepted"
+        message_id: 
+          type: string
+          format: uuid
+          description: ID da mensagem que foi aceita.
+          example: "123e4567-e89b-12d3-a456-426614174000"
+
     # --- Arquivos/Upload ---
     GetUploadUrlRequest:
-      type: object
+      type: object
       required: [filename, conversation_id, file_size, num_parts]
       properties:
-        filename: {type: string}
-        conversation_id: {type: string}
-        file_size: {type: integer, format: int64}
-        num_parts: {type: integer, format: int32, description: Número de partes para upload multipart.}
+        filename: 
+          type: string
+          description: Nome do arquivo a ser enviado.
+          example: "relatorio.pdf"
+        conversation_id: 
+          type: string
+          format: uuid
+          description: ID da conversa associada ao arquivo.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        file_size: 
+          type: integer
+          format: int64
+          description: Tamanho total do arquivo em bytes.
+          example: 5242880
+        num_parts: 
+          type: integer
+          format: int32
+          description: Número de partes para upload multipart (recomendado 5MB por parte).
+          example: 5
 
     GetUploadUrlResponse: 
-      type: object
+      type: object
       properties:
-        file_id: {type: string, format: uuid}
-        upload_session_id: {type: string, description: ID para o CompleteUpload.}
+        file_id: 
+          type: string
+          format: uuid
+          description: ID único gerado para o arquivo.
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        upload_session_id: 
+          type: string
+          description: ID da sessão de upload (necessário para CompleteUpload).
+          example: "upload_abc123xyz"
         parts:
           type: array
           items:
             type: object
             properties:
-              part_number: {type: integer}
-              presigned_url: {type: string, format: url}
+              part_number: 
+                type: integer
+                description: Número da parte (1, 2, 3...).
+                example: 1
+              presigned_url: 
+                type: string
+                format: url
+                description: URL pré-assinada para upload desta parte via PUT.
+                example: "http://localhost:9000/chat4all-files/conv123/file456.pdf?uploadId=abc&partNumber=1"
 
     CompleteUploadRequest: 
-      type: object
+      type: object
       required: [file_id, upload_session_id, completed_parts, checksum_sha256]
       properties:
-        file_id: {type: string, format: uuid}
-        upload_session_id: {type: string}
+        file_id: 
+          type: string
+          format: uuid
+          description: ID do arquivo (retornado por GetUploadUrl).
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        upload_session_id: 
+          type: string
+          description: ID da sessão de upload.
+          example: "upload_abc123xyz"
         completed_parts:
           type: array
           items:
             type: object
             properties:
-              part_etag: {type: string, description: ETag retornado pelo S3/MinIO.}
-              part_number: {type: integer}
-        checksum_sha256: {type: string, description: Checksum final para validação.}
+              part_etag: 
+                type: string
+                description: ETag retornado pelo S3/MinIO após o PUT de cada parte.
+                example: "\"3858f62230ac3c915f300c664312c11f-1\""
+              part_number: 
+                type: integer
+                description: Número da parte correspondente.
+                example: 1
+        checksum_sha256: 
+          type: string
+          description: Checksum SHA-256 final do arquivo para validação de integridade.
+          example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        file_size:
+          type: integer
+          format: int64
+          description: Tamanho final do arquivo em bytes.
+          example: 5242880
+
+    CompleteUploadResponse:
+      type: object
+      properties:
+        file_id: 
+          type: string
+          format: uuid
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        success: 
+          type: boolean
+          example: true
+        message: 
+          type: string
+          example: "Upload concluído"
+        file_metadata: 
+          $ref: '#/components/schemas/FileMetadata'
 
     # --- Callbacks/Notificações ---
     NotificationRequest:
       type: object
-      description: Simula o webhook de status recebido de uma plataforma externa.
+      description: Webhook de status recebido de uma plataforma externa (WhatsApp, Telegram, etc.).
       required: [message_id, status, channel]
       properties:
-        message_id: {type: string, format: uuid}
+        message_id: 
+          type: string
+          format: uuid
+          description: ID da mensagem original.
+          example: "123e4567-e89b-12d3-a456-426614174000"
         status:
           $ref: '#/components/schemas/MessageStatus'
-          description: O novo status (RECEIVED, READ, FAILED).
-        channel: {type: string}
-        remote_id: {type: string, description: ID da mensagem na plataforma externa.}
-        
+        channel: 
+          type: string
+          description: Canal que está reportando o status.
+          example: "whatsapp"
+        remote_id: 
+          type: string
+          description: ID da mensagem na plataforma externa.
+          example: "wamid.HBgNNTUxMTk4NzY1NDMyMRUCABEYEjA4M0FBNEU1RjBGOEY3MDRCMAA="
+
     NotificationResponse:
       type: object
       properties:
-        success: {type: boolean}
-        message: {type: string}
+        success: 
+          type: boolean
+          description: Indica se a notificação foi processada com sucesso.
+          example: true
+        message: 
+          type: string
+          description: Mensagem de retorno.
+          example: "Status atualizado"
 
 # =======================================================
 # 3. ENDPOINTS (Paths)
@@ -164,25 +329,53 @@ paths:
     post:
       tags: [Autenticação]
       summary: Obtém um token JWT para acessar a API.
+      description: |
+        Gera um token de acesso JWT usando credenciais de cliente.
+        O token deve ser incluído no header Authorization de todas as requisições subsequentes.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/TokenRequest'
+            example:
+              client_id: "admin_client"
+              client_secret: "super_secret_key"
       responses:
         '200':
-          description: Token JWT retornado.
+          description: Token JWT retornado com sucesso.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Credenciais inválidas.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Credenciais inválidas"
 
   # 6.3 Enviar Mensagem (Inclui Suporte a Anexos)
   /v1/messages:
     post:
       tags: [Mensageria]
-      summary: Envia uma mensagem de texto ou um anexo (referenciando o file_id).
+      summary: Envia uma mensagem de texto ou com anexos.
+      description: |
+        Envia uma mensagem para uma conversa existente. A mensagem é aceita de forma assíncrona
+        e processada pelo Kafka. O servidor gera automaticamente o sequence number (seq_num)
+        para garantir ordenação causal.
+
+        **Para mensagens de texto:**
+        - payload.type = "text"
+        - payload.text = "conteúdo da mensagem"
+
+        **Para mensagens com arquivo:**
+        - payload.type = "file"
+        - file_attachments = [lista de file_ids obtidos via upload]
       security:
         - BearerAuth: []
       requestBody:
@@ -191,19 +384,57 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SendMessageRequest'
+            examples:
+              text_message:
+                summary: Mensagem de texto simples
+                value:
+                  message_id: "123e4567-e89b-12d3-a456-426614174000"
+                  conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+                  from_user: "user_giovanna"
+                  to: ["user_ray", "user_fabo"]
+                  channels: ["whatsapp"]
+                  payload:
+                    type: "text"
+                    text: "Olá, tudo bem?"
+              file_message:
+                summary: Mensagem com anexo
+                value:
+                  message_id: "123e4567-e89b-12d3-a456-426614174001"
+                  conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+                  from_user: "user_giovanna"
+                  to: ["user_ray"]
+                  channels: ["all"]
+                  payload:
+                    type: "file"
+                  file_attachments:
+                    - file_id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
       responses:
         '202':
-          description: Mensagem aceita e publicada no Kafka.
+          description: Mensagem aceita e publicada no Kafka para processamento assíncrono.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SendMessageResponse'
+        '400':
+          description: Requisição inválida (payload malformado, arquivo não encontrado, etc.).
+        '401':
+          description: Token JWT ausente ou inválido.
+        '503':
+          description: Kafka indisponível.
 
   # 6.4 Upload de Arquivo - 1/3 (Inicia o Upload Resumível)
   /v1/files/initiate:
     post:
       tags: [Arquivos]
-      summary: Inicia o processo de upload multipart e retorna URLs pré-assinadas.
+      summary: Inicia o processo de upload multipart.
+      description: |
+        Inicia uma sessão de upload multipart no MinIO/S3 e retorna URLs pré-assinadas
+        para upload de cada parte. Recomenda-se dividir arquivos em partes de ~5MB.
+
+        **Fluxo:**
+        1. Chamar /v1/files/initiate (obtém URLs)
+        2. Fazer PUT em cada presigned_url com os bytes da parte
+        3. Chamar /v1/files/complete com os ETags retornados
       security:
         - BearerAuth: []
       requestBody:
@@ -212,19 +443,31 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/GetUploadUrlRequest'
+            example:
+              filename: "relatorio.pdf"
+              conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+              file_size: 5242880
+              num_parts: 1
       responses:
         '200':
-          description: URLs pré-assinadas para upload das partes.
+          description: URLs pré-assinadas geradas com sucesso.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/GetUploadUrlResponse'
+        '401':
+          description: Token JWT ausente ou inválido.
+        '503':
+          description: MinIO indisponível.
 
   # 6.4 Upload de Arquivo - 2/3 (Finaliza o Upload)
   /v1/files/complete:
     post:
       tags: [Arquivos]
-      summary: Finaliza o upload multipart no MinIO/S3 e persiste os metadados.
+      summary: Finaliza o upload multipart.
+      description: |
+        Completa a sessão de upload multipart no MinIO/S3 e persiste os metadados
+        no MongoDB. Após este passo, o arquivo pode ser referenciado em mensagens.
       security:
         - BearerAuth: []
       requestBody:
@@ -233,55 +476,107 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CompleteUploadRequest'
+            example:
+              file_id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+              upload_session_id: "upload_abc123xyz"
+              file_size: 5242880
+              completed_parts:
+                - part_number: 1
+                  part_etag: "\"3858f62230ac3c915f300c664312c11f-1\""
+              checksum_sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       responses:
         '200':
           description: Upload finalizado e metadados persistidos.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  file_id: {type: string}
-                  success: {type: boolean}
-                  message: {type: string}
-                  file_metadata: {$ref: '#/components/schemas/FileMetadata'}
+                $ref: '#/components/schemas/CompleteUploadResponse'
+        '404':
+          description: Arquivo não encontrado.
+        '401':
+          description: Token JWT ausente ou inválido.
+        '503':
+          description: MinIO indisponível.
 
   # 6.4 Upload de Arquivo - 3/3 (Download)
   /v1/files/{file_id}/download:
     get:
       tags: [Arquivos]
-      summary: Obtém uma URL temporária (pré-assinada) para download de um arquivo.
+      summary: Obtém uma URL temporária para download.
+      description: |
+        Gera uma URL pré-assinada (válida por 5 minutos) para download direto do arquivo
+        armazenado no MinIO/S3.
       security:
         - BearerAuth: []
       parameters:
         - in: path
           name: file_id
-          schema: {type: string, format: uuid}
+          schema: 
+            type: string
+            format: uuid
           required: true
+          description: ID do arquivo a ser baixado.
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
       responses:
         '200':
-          description: Retorna a URL temporária para acesso direto ao MinIO/S3.
+          description: URL temporária gerada com sucesso.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  presigned_url: {type: string, format: url}
-                  filename: {type: string}
-                  mime_type: {type: string}
+                  presigned_url: 
+                    type: string
+                    format: url
+                    description: URL pré-assinada válida por 5 minutos.
+                    example: "http://localhost:9000/chat4all-files/conv123/file456.pdf?X-Amz-Expires=300"
+                  filename: 
+                    type: string
+                    example: "relatorio.pdf"
+                  mime_type: 
+                    type: string
+                    example: "application/pdf"
+        '404':
+          description: Arquivo não encontrado.
+        '401':
+          description: Token JWT ausente ou inválido.
 
   # 6.5 Delivery / Read callbacks (Webhook)
   /v1/notifications:
     post:
       tags: [Callbacks]
-      summary: Endpoint do servidor para receber webhooks de status de entrega/leitura.
-      description: Este endpoint é chamado pelas APIs externas (mocks) após a entrega ou leitura.
+      summary: Recebe webhooks de status de entrega/leitura.
+      description: |
+        Endpoint chamado pelos conectores externos (WhatsApp, Telegram, etc.) para
+        notificar mudanças de status das mensagens. Atualiza o status no MongoDB
+        e publica uma notificação no tópico Kafka 'notifications'.
+
+        **Status permitidos:**
+        - 2 (DELIVERED): Mensagem entregue ao canal externo
+        - 4 (RECEIVED): Mensagem recebida pelo destinatário
+        - 5 (READ): Mensagem lida pelo destinatário
+        - 6 (FAILED): Falha na entrega
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/NotificationRequest'
+            examples:
+              delivered:
+                summary: Mensagem entregue
+                value:
+                  message_id: "123e4567-e89b-12d3-a456-426614174000"
+                  status: 2
+                  channel: "whatsapp"
+                  remote_id: "wamid.HBgNNTUxMTk4NzY1NDMyMRUCABEYEjA4M0FBNEU1RjBGOEY3MDRCMAA="
+              read:
+                summary: Mensagem lida
+                value:
+                  message_id: "123e4567-e89b-12d3-a456-426614174000"
+                  status: 5
+                  channel: "telegram"
+                  remote_id: "telegram_msg_123456"
       responses:
         '202':
           description: Notificação aceita e publicada no tópico 'notifications'.
@@ -289,3 +584,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotificationResponse'
+        '400':
+          description: Status inválido ou canal não corresponde à mensagem.
+        '404':
+          description: Mensagem não encontrada.
+        '503':
+          description: MongoDB indisponível.

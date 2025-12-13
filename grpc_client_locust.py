@@ -16,7 +16,7 @@ CLIENT_SECRET = "super_secret_key"
 
 # Inicialização do Stub global (feito uma vez por processo)
 # NOTA: Em Locust, o gRPC channel e stub devem ser gerenciados com cuidado para concorrência.
-# Usaremos uma abordagem simples de inicialização no módulo.
+
 try:
     CHANNEL = grpc.insecure_channel(SERVER_ADDRESS)
     CHAT_STUB = chat4all_pb2_grpc.ChatServiceStub(CHANNEL)
@@ -95,5 +95,4 @@ def send_message_request(user_id):
     except Exception as e:
         return False, str(e)
 
-# Garante que o estado seja configurado quando o módulo é importado pelo Locust
 setup_global_state()

@@ -25,6 +25,6 @@ def start_metrics_server(port, worker_name):
     """Inicia o servidor HTTP para expor métricas do Prometheus."""
     try:
         start_http_server(port, addr='0.0.0.0')
-        print(f"[{worker_name}] 📈 Servidor de Métricas Prometheus iniciado na porta {port}.")
+        print(f"[{worker_name}] Servidor de Métricas Prometheus iniciado na porta {port}.")
     except Exception as e:
         print(f"[{worker_name}] ERRO: Não foi possível iniciar o servidor de métricas: {e}")

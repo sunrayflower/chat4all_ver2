@@ -1,4 +1,4 @@
-# seed_script.py (Versão Corrigida para Roteamento)
+# seed_script.py
 
 from pymongo import MongoClient
 
@@ -6,20 +6,19 @@ from pymongo import MongoClient
 client = MongoClient("mongodb://localhost:27017/")
 db = client["chat4all_v2"]
 
-# Usando uma coleção que armazena todos os canais de um usuário
-mapping = db["user_channel_map"] # <-- RECOMENDADO USAR ESSE NOME DE COLEÇÃO
+mapping = db["user_channel_map"]
 
 print("Limpando collection user_channel_map...")
 mapping.delete_many({})
 
-print("📌 Inserindo mapeamentos de teste...")
+print("Inserindo mapeamentos de teste...")
 
 user_mappings = [
     {
         "user_id_interno": "user_giovanna",
         "name": "Giovanna",
         "mappings": [
-            {"canal": "whatsapp", "id_externo": "+551199999999"},
+            {"canal": "whatsapp", "id_externo": "+556299999999"},
             {"canal": "instagram", "id_externo": "giovanna_ig"},
             {"canal": "telegram", "id_externo": "1628432250", "username": "@nannafmgn"}
         ]
@@ -34,10 +33,17 @@ user_mappings = [
         ]
     },
     {
-        "user_id_interno": "user_jao",
-        "name": "Jão",
+        "user_id_interno": "user_fabo",
+        "name": "Fabio",
         "mappings": [
-            {"canal": "instagram", "id_externo": "joao"}
+            {"canal": "instagram", "id_externo": "fabinho"}
+        ]
+    },
+    {
+        "user_id_interno": "load_target",
+        "name": "locust",
+        "mappings": [
+            {"canal": "whatsapp", "id_externo": "+5511988887777"}
         ]
     }
 ]

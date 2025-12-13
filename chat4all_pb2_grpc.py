@@ -26,9 +26,7 @@ if _version_not_supported:
 
 
 class ChatServiceStub(object):
-    """===================================================
-    1. Definição dos Serviços (Interface da API)
-    ===================================================
+    """1. Definição dos Serviços (Interface da API)
 
     """
 
@@ -71,9 +69,7 @@ class ChatServiceStub(object):
 
 
 class ChatServiceServicer(object):
-    """===================================================
-    1. Definição dos Serviços (Interface da API)
-    ===================================================
+    """1. Definição dos Serviços (Interface da API)
 
     """
 
@@ -161,9 +157,7 @@ def add_ChatServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class ChatService(object):
-    """===================================================
-    1. Definição dos Serviços (Interface da API)
-    ===================================================
+    """1. Definição dos Serviços (Interface da API)
 
     """
 

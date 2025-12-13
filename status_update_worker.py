@@ -83,7 +83,7 @@ def run_status_update_worker():
     try:
         print(f"Status Update Worker: Consumer pronto no tópico '{KAFKA_TOPIC_NOTIFICATIONS}' com Grupo: '{KAFKA_GROUP_ID}'...")
         consumer = KafkaConsumer(
-            KAFKA_TOPIC_NOTIFICATIONS, # Consumindo o NOVO TÓPICO
+            KAFKA_TOPIC_NOTIFICATIONS, 
             group_id=KAFKA_GROUP_ID, 
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
             auto_offset_reset='latest',

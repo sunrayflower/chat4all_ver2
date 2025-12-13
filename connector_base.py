@@ -7,7 +7,7 @@ from pymongo import MongoClient
 import chat4all_pb2
 import chat4all_pb2_grpc
 
-import metrics_setup   # << ADICIONAMOS
+import metrics_setup  
 
 KAFKA_TOPIC_MESSAGES = "messages"
 KAFKA_BOOTSTRAP_SERVERS = ["localhost:9092"]
@@ -69,7 +69,7 @@ def run_connector(channel_name, group_id, kafka_topic_consume, db, worker_name):
 
     # Kafka Consumer
     try:
-        print(f"[{channel_name}] 🔍 Tentando consumir do Tópico: '{kafka_topic_consume}' com Grupo: '{group_id}'")
+        print(f"[{channel_name}] Tentando consumir do Tópico: '{kafka_topic_consume}' com Grupo: '{group_id}'")
         consumer = KafkaConsumer(
             kafka_topic_consume,
             group_id=group_id,
